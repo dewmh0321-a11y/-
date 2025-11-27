@@ -5,32 +5,35 @@ import plotly.express as px
 # 1. 페이지 설정
 st.set_page_config(page_title="리더십 영향력 진단", layout="wide")
 
-# 2. 데이터 로드 함수 (무적의 리더기)
+# 2. 데이터 로드 함수 (디버깅 모드)
 @st.cache_data
 def load_data():
     file_name = "data.xlsx"
     df = pd.DataFrame()
     
-    # [시도 1] 진짜 엑셀 파일일 경우
+    # [1단계] 엑셀로 시도
     try:
         df = pd.read_excel(file_name, engine='openpyxl')
     except:
-        # [시도 2] 이름만 엑셀이고, 실제로는 CSV인 경우 (UTF-8)
+        # [2단계] CSV (UTF-8 with BOM - 엑셀 저장 기본값)
         try:
-            df = pd.read_csv(file_name)
+            df = pd.read_csv(file_name, encoding='utf-8-sig')
         except:
-            # [시도 3] 한글이 포함된 CSV인 경우 (CP949)
+            # [3단계] CSV (한글 EUC-KR - 구버전 엑셀)
             try:
-                df = pd.read_csv(file_name, encoding='cp949')
-            except Exception as e:
-                # 최후의 수단: 에러 내용을 화면에 보여줌 (범인 색출용)
-                st.error(f"파일을 읽는 모든 방법이 실패했습니다. 에러 메시지: {e}")
-                return pd.DataFrame()
+                df = pd.read_csv(file_name, encoding='euc-kr')
+            except:
+                # [4단계] CSV (CP949 - 확장 한글)
+                try:
+                    df = pd.read_csv(file_name, encoding='cp949')
+                except Exception as e:
+                    return pd.DataFrame()
 
-    # 데이터 정리 (번호표 초기화 및 문항 자르기)
     if not df.empty:
+        # 데이터 정리
         df = df.reset_index(drop=True)
         df = df.head(44)
+        # 첫 번째 컬럼을 강제로 질문 컬럼으로 지정
         df.columns.values[0] = "question"
         return df
     else:
@@ -38,25 +41,31 @@ def load_data():
 
 df_questions = load_data()
 
-# 3. 로직 구조
-structure = {
-    "합리적 파워": ["합리적 설득", "이해관계 설명", "교환"],
-    "친화적 파워": ["영감에 대한 호소", "협의", "호의 얻기", "개인적 호소", "협력"],
-    "강압적 파워": ["합법화", "압력", "연합"]
-}
-
-# 4. 앱 화면 구성
+# 3. 앱 화면 구성
 st.title("📊 리더십 영향력 스타일 진단")
 
+# --- [진단용] 데이터가 어떻게 읽혔는지 화면에 보여줍니다 (문제 해결 후 지우면 됨) ---
+if not df_questions.empty:
+    with st.expander("🔍 데이터 확인하기 (문제가 보이면 여기를 클릭하세요)", expanded=True):
+        st.write("컴퓨터가 읽은 데이터의 앞부분입니다. 'question' 열에 한글이 잘 보이나요?")
+        st.dataframe(df_questions.head())
+# -------------------------------------------------------------------------
+
 if df_questions.empty:
-    st.error("❌ 데이터를 불러오지 못했습니다.")
-    st.info("관리자에게 문의하거나 깃허브의 data.xlsx 파일을 확인해주세요.")
+    st.error("❌ 데이터를 읽을 수 없습니다. 깃허브의 파일 이름이 'data.xlsx'인지 확인해주세요.")
 else:
     with st.sidebar:
         st.header("진단자 정보")
         name = st.text_input("이름", "Guest")
     
     with st.form("my_form"):
+        # 로직 구조
+        structure = {
+            "합리적 파워": ["합리적 설득", "이해관계 설명", "교환"],
+            "친화적 파워": ["영감에 대한 호소", "협의", "호의 얻기", "개인적 호소", "협력"],
+            "강압적 파워": ["합법화", "압력", "연합"]
+        }
+        
         # 매핑
         sub_categories = []
         for main, subs in structure.items():
@@ -80,7 +89,12 @@ else:
             with tabs[idx]:
                 st.subheader(main_cat)
                 for i, row in group.iterrows():
-                    scores[i] = st.slider(f"{i+1}. {row['question']}", 1, 5, 3, key=i)
+                    # 질문 텍스트가 비어있으면 대체 텍스트 표시
+                    q_text = row['question']
+                    if pd.isna(q_text) or str(q_text).strip() == "":
+                        q_text = "(질문 내용을 불러오지 못했습니다. 위 '데이터 확인하기'를 봐주세요)"
+                    
+                    scores[i] = st.slider(f"{i+1}. {q_text}", 1, 5, 3, key=i)
         
         submitted = st.form_submit_button("결과 확인")
 
