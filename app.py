@@ -5,35 +5,35 @@ import plotly.express as px
 # 1. 페이지 설정
 st.set_page_config(page_title="리더십 영향력 진단", layout="wide")
 
-# 2. 데이터 로드 함수 (디버깅 모드)
+# 2. 데이터 로드 함수 (빈 줄 제거 + 44개 추출 강화)
 @st.cache_data
 def load_data():
     file_name = "data.xlsx"
     df = pd.DataFrame()
     
-    # [1단계] 엑셀로 시도
+    # [읽기 시도 1] 엑셀
     try:
         df = pd.read_excel(file_name, engine='openpyxl')
     except:
-        # [2단계] CSV (UTF-8 with BOM - 엑셀 저장 기본값)
+        # [읽기 시도 2] CSV (다양한 인코딩)
         try:
             df = pd.read_csv(file_name, encoding='utf-8-sig')
         except:
-            # [3단계] CSV (한글 EUC-KR - 구버전 엑셀)
             try:
-                df = pd.read_csv(file_name, encoding='euc-kr')
+                df = pd.read_csv(file_name, encoding='cp949')
             except:
-                # [4단계] CSV (CP949 - 확장 한글)
-                try:
-                    df = pd.read_csv(file_name, encoding='cp949')
-                except Exception as e:
-                    return pd.DataFrame()
+                return pd.DataFrame()
 
     if not df.empty:
-        # 데이터 정리
+        # [데이터 청소] 빈 칸이 있는 행은 날려버립니다.
+        df = df.dropna()
+        # 번호표(인덱스)를 0부터 다시 매깁니다.
         df = df.reset_index(drop=True)
-        df = df.head(44)
-        # 첫 번째 컬럼을 강제로 질문 컬럼으로 지정
+        
+        # [핵심] 정확히 44개만 자릅니다. (더 많아도, 적어도 문제 안 생기게)
+        df = df.iloc[:44]
+        
+        # 첫 번째 컬럼을 질문으로 설정
         df.columns.values[0] = "question"
         return df
     else:
@@ -41,31 +41,33 @@ def load_data():
 
 df_questions = load_data()
 
-# 3. 앱 화면 구성
+# 3. 로직 구조
+structure = {
+    "합리적 파워": ["합리적 설득", "이해관계 설명", "교환"],
+    "친화적 파워": ["영감에 대한 호소", "협의", "호의 얻기", "개인적 호소", "협력"],
+    "강압적 파워": ["합법화", "압력", "연합"]
+}
+
+# 4. 앱 화면 구성
 st.title("📊 리더십 영향력 스타일 진단")
 
-# --- [진단용] 데이터가 어떻게 읽혔는지 화면에 보여줍니다 (문제 해결 후 지우면 됨) ---
+# --- [수정됨] 데이터 전체 확인하기 (이제 44개가 다 보입니다) ---
 if not df_questions.empty:
-    with st.expander("🔍 데이터 확인하기 (문제가 보이면 여기를 클릭하세요)", expanded=True):
-        st.write("컴퓨터가 읽은 데이터의 앞부분입니다. 'question' 열에 한글이 잘 보이나요?")
-        st.dataframe(df_questions.head())
-# -------------------------------------------------------------------------
+    with st.expander(f"🔍 데이터 확인하기 (총 {len(df_questions)}개 문항 로드됨)", expanded=True):
+        st.write("스크롤을 내리면 44개 문항이 다 보여야 정상입니다.")
+        # .head()를 지워서 전체 데이터를 보여줍니다.
+        st.dataframe(df_questions, height=300) 
+# -----------------------------------------------------------
 
-if df_questions.empty:
-    st.error("❌ 데이터를 읽을 수 없습니다. 깃허브의 파일 이름이 'data.xlsx'인지 확인해주세요.")
+if len(df_questions) < 44:
+    st.error(f"❌ 데이터가 부족합니다! (현재 {len(df_questions)}개)")
+    st.info("엑셀 파일 안에 빈 줄이 있거나, 문항 수가 44개보다 적은지 확인해주세요.")
 else:
     with st.sidebar:
         st.header("진단자 정보")
         name = st.text_input("이름", "Guest")
     
     with st.form("my_form"):
-        # 로직 구조
-        structure = {
-            "합리적 파워": ["합리적 설득", "이해관계 설명", "교환"],
-            "친화적 파워": ["영감에 대한 호소", "협의", "호의 얻기", "개인적 호소", "협력"],
-            "강압적 파워": ["합법화", "압력", "연합"]
-        }
-        
         # 매핑
         sub_categories = []
         for main, subs in structure.items():
@@ -76,9 +78,9 @@ else:
         for main, sub in sub_categories:
             mappings.extend([(main, sub)] * 4)
             
-        if len(df_questions) == len(mappings):
-            df_questions['main_cat'] = [m[0] for m in mappings]
-            df_questions['sub_cat'] = [m[1] for m in mappings]
+        # 데이터프레임에 카테고리 입히기
+        df_questions['main_cat'] = [m[0] for m in mappings]
+        df_questions['sub_cat'] = [m[1] for m in mappings]
 
         scores = {}
         tabs = st.tabs(["1. 합리적 파워", "2. 친화적 파워", "3. 강압적 파워"])
@@ -89,12 +91,8 @@ else:
             with tabs[idx]:
                 st.subheader(main_cat)
                 for i, row in group.iterrows():
-                    # 질문 텍스트가 비어있으면 대체 텍스트 표시
-                    q_text = row['question']
-                    if pd.isna(q_text) or str(q_text).strip() == "":
-                        q_text = "(질문 내용을 불러오지 못했습니다. 위 '데이터 확인하기'를 봐주세요)"
-                    
-                    scores[i] = st.slider(f"{i+1}. {q_text}", 1, 5, 3, key=i)
+                    # 질문 텍스트 출력
+                    scores[i] = st.slider(f"{i+1}. {row['question']}", 1, 5, 3, key=i)
         
         submitted = st.form_submit_button("결과 확인")
 
