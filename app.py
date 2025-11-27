@@ -5,21 +5,35 @@ import plotly.express as px
 # 1. 페이지 설정
 st.set_page_config(page_title="리더십 영향력 진단", layout="wide")
 
-# 2. 데이터 로드
+# 2. 데이터 로드 함수 (무적의 리더기)
 @st.cache_data
 def load_data():
-    file_name = "data.xlsx" # 엑셀 파일 이름
+    file_name = "data.xlsx"
+    df = pd.DataFrame()
+    
+    # [시도 1] 진짜 엑셀 파일일 경우
     try:
-        # 엑셀 파일 읽기
         df = pd.read_excel(file_name, engine='openpyxl')
+    except:
+        # [시도 2] 이름만 엑셀이고, 실제로는 CSV인 경우 (UTF-8)
+        try:
+            df = pd.read_csv(file_name)
+        except:
+            # [시도 3] 한글이 포함된 CSV인 경우 (CP949)
+            try:
+                df = pd.read_csv(file_name, encoding='cp949')
+            except Exception as e:
+                # 최후의 수단: 에러 내용을 화면에 보여줌 (범인 색출용)
+                st.error(f"파일을 읽는 모든 방법이 실패했습니다. 에러 메시지: {e}")
+                return pd.DataFrame()
+
+    # 데이터 정리 (번호표 초기화 및 문항 자르기)
+    if not df.empty:
         df = df.reset_index(drop=True)
         df = df.head(44)
-        if not df.empty:
-            df.columns.values[0] = "question"
-            return df
-        else:
-            return pd.DataFrame()
-    except Exception as e:
+        df.columns.values[0] = "question"
+        return df
+    else:
         return pd.DataFrame()
 
 df_questions = load_data()
@@ -35,7 +49,8 @@ structure = {
 st.title("📊 리더십 영향력 스타일 진단")
 
 if df_questions.empty:
-    st.error("❌ 데이터 파일을 읽을 수 없습니다.")
+    st.error("❌ 데이터를 불러오지 못했습니다.")
+    st.info("관리자에게 문의하거나 깃허브의 data.xlsx 파일을 확인해주세요.")
 else:
     with st.sidebar:
         st.header("진단자 정보")
