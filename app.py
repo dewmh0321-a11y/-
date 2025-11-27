@@ -5,13 +5,13 @@ import plotly.express as px
 # 1. 페이지 설정
 st.set_page_config(page_title="리더십 영향력 진단", layout="wide")
 
-# 2. 데이터 로드 함수 (스마트 필터링 기능 추가)
+# 2. 데이터 로드 함수
 @st.cache_data
 def load_data():
     file_name = "data.xlsx"
     df = pd.DataFrame()
     
-    # [1단계] 파일 읽기 (엑셀, CSV, 한글 등 모든 경우의 수 시도)
+    # [읽기] 엑셀, CSV 등 가능한 모든 방법 시도
     try:
         df = pd.read_excel(file_name, engine='openpyxl', header=None)
     except:
@@ -24,17 +24,15 @@ def load_data():
                 return pd.DataFrame()
 
     if not df.empty:
-        # [2단계] 가장 '질문스러운' 긴 글자가 있는 컬럼 찾기
+        # 가장 긴 글자가 있는 컬럼을 질문으로 선택
         target_col = None
         max_len = 0
         for col in df.columns:
-            # 모든 값을 문자로 바꾸고 평균 길이를 잽니다.
             avg_len = df[col].astype(str).str.len().mean()
             if avg_len > max_len:
                 max_len = avg_len
                 target_col = col
         
-        # 질문 컬럼 선택
         if target_col is not None:
             df = df[[target_col]]
         else:
@@ -42,25 +40,22 @@ def load_data():
 
         df.columns = ["question"]
         
-        # -----------------------------------------------------------
-        # [핵심 수정] 껍데기(제목, 빈칸) 제거하는 필터
-        # 1. 내용이 없는(NaN) 줄 제거
-        df = df.dropna()
-        # 2. "질문", "문항", "번호" 같은 제목 줄 제거 (글자 수가 5자 미만인 것은 질문이 아니라고 판단)
+        # [필터] 껍데기 제거 (글자 수 5자 미만인 'None', '질문' 등 삭제)
         df = df[df["question"].astype(str).str.len() > 5]
-        # -----------------------------------------------------------
 
-        # 번호표 다시 매기기 (0번부터 깔끔하게)
+        # [수정됨] 번호표를 1번부터 시작하게 변경
         df = df.reset_index(drop=True)
+        df.index = df.index + 1 # 0,1,2... -> 1,2,3... 으로 변경
         
-        # 만약 44개보다 모자라면 채우기 (에러 방지용)
+        # 44개 부족하면 채우기
         if len(df) < 44:
             needed = 44 - len(df)
-            dummy = pd.DataFrame({"question": [f"(누락된 문항 {i+1})"] * needed})
-            df = pd.concat([df, dummy], ignore_index=True)
+            dummy = pd.DataFrame({"question": [f"(부족한 문항 채움 {i+1})"] * needed})
+            dummy.index = range(len(df)+1, 45) # 인덱스 이어붙이기
+            df = pd.concat([df, dummy])
         
-        # 정확히 44개만 자르기
-        df = df.head(44)
+        # 44개만 자르기
+        df = df.iloc[:44]
         return df
     else:
         return pd.DataFrame()
@@ -77,12 +72,13 @@ structure = {
 # 4. 앱 화면 구성
 st.title("📊 리더십 영향력 스타일 진단")
 
-# --- 데이터 확인용 (이제 '질문'이나 'None'이 없어야 합니다) ---
+# --- [수정됨] 데이터 전체 확인 (스크롤 가능!) ---
 if not df_questions.empty:
-    with st.expander(f"✅ 데이터 로드 성공 (총 {len(df_questions)}문항)", expanded=True):
-        st.write("아래 1번 문항이 'None'이나 '질문'이 아니라, **진짜 첫 번째 질문**이어야 합니다.")
-        st.dataframe(df_questions.head(3)) # 맨 위 3개만 보여줍니다
-# -------------------------------------------------------
+    with st.expander(f"✅ 문항 리스트 확인 (총 {len(df_questions)}개 - 클릭해서 펼쳐보세요)", expanded=True):
+        st.write("이제 번호가 1번부터 시작하며, 스크롤을 내려서 44번까지 확인할 수 있습니다.")
+        # height=400을 주어서 스크롤이 생기게 함
+        st.dataframe(df_questions, height=400, use_container_width=True)
+# ---------------------------------------------
 
 if len(df_questions) < 44:
     st.error("❌ 유효한 질문을 찾지 못했습니다.")
@@ -115,7 +111,8 @@ else:
             with tabs[idx]:
                 st.subheader(main_cat)
                 for i, row in group.iterrows():
-                    scores[i] = st.slider(f"{i+1}. {row['question']}", 1, 5, 3, key=i)
+                    # 질문 텍스트 출력 (인덱스가 1부터 시작하므로 i 그대로 사용)
+                    scores[i] = st.slider(f"{i}. {row['question']}", 1, 5, 3, key=i)
         
         submitted = st.form_submit_button("결과 확인")
 
@@ -134,4 +131,4 @@ else:
         with col2:
             st.subheader("3대 파워 요약")
             fig2 = px.bar(main_result, x='main_cat', y='score', color='main_cat', range_y=[0, 5])
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, use_container_width=
