@@ -11,7 +11,7 @@ def load_data():
     file_name = "data.xlsx"
     df = pd.DataFrame()
     
-    # [읽기] 엑셀, CSV 등 가능한 모든 방법 시도
+    # [읽기] 엑셀, CSV 모든 방법 시도
     try:
         df = pd.read_excel(file_name, engine='openpyxl', header=None)
     except:
@@ -24,7 +24,7 @@ def load_data():
                 return pd.DataFrame()
 
     if not df.empty:
-        # 가장 긴 글자가 있는 컬럼을 질문으로 선택
+        # 긴 문장이 있는 컬럼을 질문으로 선택
         target_col = None
         max_len = 0
         for col in df.columns:
@@ -40,19 +40,17 @@ def load_data():
 
         df.columns = ["question"]
         
-        # [필터] 껍데기 제거 (글자 수 5자 미만인 'None', '질문' 등 삭제)
+        # [필터] 'None', '질문', '번호' 등 껍데기 제거 (글자 수 5자 이하 삭제)
         df = df[df["question"].astype(str).str.len() > 5]
 
-        # [수정됨] 번호표를 1번부터 시작하게 변경
+        # [안전 장치] 컴퓨터는 0번부터 세도록 초기화 (에러 방지 핵심!)
         df = df.reset_index(drop=True)
-        df.index = df.index + 1 # 0,1,2... -> 1,2,3... 으로 변경
         
         # 44개 부족하면 채우기
         if len(df) < 44:
             needed = 44 - len(df)
-            dummy = pd.DataFrame({"question": [f"(부족한 문항 채움 {i+1})"] * needed})
-            dummy.index = range(len(df)+1, 45) # 인덱스 이어붙이기
-            df = pd.concat([df, dummy])
+            dummy = pd.DataFrame({"question": [f"(부족한 문항 자동 생성 {i+1})"] * needed})
+            df = pd.concat([df, dummy], ignore_index=True)
         
         # 44개만 자르기
         df = df.iloc[:44]
@@ -72,13 +70,12 @@ structure = {
 # 4. 앱 화면 구성
 st.title("📊 리더십 영향력 스타일 진단")
 
-# --- [수정됨] 데이터 전체 확인 (스크롤 가능!) ---
+# --- 데이터 확인용 (이제 1번부터 44번까지 쭉 보여야 합니다) ---
 if not df_questions.empty:
-    with st.expander(f"✅ 문항 리스트 확인 (총 {len(df_questions)}개 - 클릭해서 펼쳐보세요)", expanded=True):
-        st.write("이제 번호가 1번부터 시작하며, 스크롤을 내려서 44번까지 확인할 수 있습니다.")
-        # height=400을 주어서 스크롤이 생기게 함
-        st.dataframe(df_questions, height=400, use_container_width=True)
-# ---------------------------------------------
+    with st.expander(f"✅ 문항 리스트 확인 (총 {len(df_questions)}개 - 클릭)", expanded=True):
+        st.write("번호는 0부터 시작하는 게 정상이지만, 아래 질문지에서는 **1번**부터 보일 겁니다.")
+        st.dataframe(df_questions, height=300)
+# ----------------------------------------------------
 
 if len(df_questions) < 44:
     st.error("❌ 유효한 질문을 찾지 못했습니다.")
@@ -111,8 +108,10 @@ else:
             with tabs[idx]:
                 st.subheader(main_cat)
                 for i, row in group.iterrows():
-                    # 질문 텍스트 출력 (인덱스가 1부터 시작하므로 i 그대로 사용)
-                    scores[i] = st.slider(f"{i}. {row['question']}", 1, 5, 3, key=i)
+                    # [핵심] 컴퓨터 번호(i)에 1을 더해서 화면에 보여줌 (0->1, 1->2...)
+                    # 이렇게 하면 에러는 안 나고 눈에는 1번부터 보입니다!
+                    display_num = i + 1
+                    scores[i] = st.slider(f"{display_num}. {row['question']}", 1, 5, 3, key=i)
         
         submitted = st.form_submit_button("결과 확인")
 
@@ -131,4 +130,4 @@ else:
         with col2:
             st.subheader("3대 파워 요약")
             fig2 = px.bar(main_result, x='main_cat', y='score', color='main_cat', range_y=[0, 5])
-            st.plotly_chart(fig2, use_container_width=
+            st.plotly_chart(fig2, use_container_width=True)
